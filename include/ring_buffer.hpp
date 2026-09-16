@@ -29,10 +29,43 @@ public:
 
     ~RingBuffer() { delete[] data_; }
 
-    // the default copy would copy the pointer, and then both buffers delete[] the same
-    // array. off until there's a real deep copy
-    RingBuffer(const RingBuffer&) = delete;
-    RingBuffer& operator=(const RingBuffer&) = delete;
+    // Copy constructor: deep copy. The default one would copy the pointer, and then both
+    // buffers would delete[] the same array. Elements are copied oldest first into slot 0,
+    // 1, ... so the copy is "unwrapped" (head_ = 0) but holds the same sequence.
+    RingBuffer(const RingBuffer& other)
+        : capacity_(other.capacity_), count_(other.count_) {
+        data_ = new T[capacity_];
+        try {
+            for (std::size_t i = 0; i < count_; ++i) {
+                data_[i] = other[i];
+            }
+        } catch (...) {
+            // T's copy threw partway through. The destructor won't run for an object whose
+            // constructor didn't finish, so free the array here or it leaks
+            delete[] data_;
+            throw;
+        }
+        tail_ = count_ % capacity_;
+    }
+
+    // Copy assignment, copy-and-swap: build the copy first, then swap it in. If the copy
+    // throws, *this hasn't been touched yet. Our old array ends up in `copy` and gets
+    // freed by its destructor at the end of the function.
+    RingBuffer& operator=(const RingBuffer& other) {
+        if (this != &other) {
+            RingBuffer copy(other);
+            swap(copy);
+        }
+        return *this;
+    }
+
+    void swap(RingBuffer& other) noexcept {
+        std::swap(data_, other.data_);
+        std::swap(capacity_, other.capacity_);
+        std::swap(head_, other.head_);
+        std::swap(tail_, other.tail_);
+        std::swap(count_, other.count_);
+    }
 
     // Adds to the back. If the buffer is full the oldest element gets overwritten.
     void push(const T& value) {

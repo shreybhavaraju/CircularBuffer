@@ -114,6 +114,58 @@ void test_works_with_strings() {
     CHECK(b.pop() == "c");
 }
 
+void test_copy_is_deep() {
+    RingBuffer<int> a(3);
+    for (int i = 1; i <= 4; ++i) a.push(i);  // wrapped: 2 3 4, head isn't at slot 0
+    RingBuffer<int> b(a);
+    CHECK(b.size() == 3);
+    CHECK(b.capacity() == 3);
+    CHECK(b[0] == 2 && b[1] == 3 && b[2] == 4);
+
+    // changing one can't change the other, they each own their own array
+    b.push(99);
+    CHECK(a[0] == 2 && a[2] == 4);
+    CHECK(b[0] == 3 && b[2] == 99);
+    a.pop();
+    CHECK(b.size() == 3);
+}
+
+void test_copy_keeps_wrapping_right() {
+    // the copy starts unwrapped, check it still overwrites in the right order afterwards
+    RingBuffer<int> a(4);
+    for (int i = 0; i < 6; ++i) a.push(i);  // 2 3 4 5
+    a.pop();                                // 3 4 5
+    RingBuffer<int> b(a);
+    b.push(6);
+    b.push(7);  // full, overwrites 3
+    CHECK(b.size() == 4);
+    CHECK(b[0] == 4 && b[1] == 5 && b[2] == 6 && b[3] == 7);
+}
+
+void test_copy_assignment() {
+    RingBuffer<std::string> a(2);
+    a.push("x");
+    a.push("y");
+    RingBuffer<std::string> b(5);  // different capacity, gets replaced
+    b.push("old");
+    b = a;
+    CHECK(b.capacity() == 2);
+    CHECK(b.size() == 2);
+    CHECK(b[0] == "x" && b[1] == "y");
+    b.push("z");
+    CHECK(a[0] == "x");  // a untouched
+}
+
+void test_self_assignment() {
+    RingBuffer<int> a(3);
+    a.push(1);
+    a.push(2);
+    RingBuffer<int>& same = a;  // through a reference so the compiler doesn't warn
+    a = same;
+    CHECK(a.size() == 2);
+    CHECK(a[0] == 1 && a[1] == 2);
+}
+
 int main() {
     RUN(test_new_buffer_is_empty);
     RUN(test_zero_capacity_throws);
@@ -125,6 +177,10 @@ int main() {
     RUN(test_index_out_of_range_throws);
     RUN(test_clear);
     RUN(test_works_with_strings);
+    RUN(test_copy_is_deep);
+    RUN(test_copy_keeps_wrapping_right);
+    RUN(test_copy_assignment);
+    RUN(test_self_assignment);
 
     if (g_failures) {
         std::printf("\n%d check(s) failed\n", g_failures);
