@@ -34,6 +34,7 @@ public:
     // 1, ... so the copy is "unwrapped" (head_ = 0) but holds the same sequence.
     RingBuffer(const RingBuffer& other)
         : capacity_(other.capacity_), count_(other.count_) {
+        if (capacity_ == 0) return;  // copying a moved-from buffer gives another empty one
         data_ = new T[capacity_];
         try {
             for (std::size_t i = 0; i < count_; ++i) {
@@ -59,6 +60,33 @@ public:
         return *this;
     }
 
+    // Move constructor: take other's array instead of copying it, no allocation at all.
+    // other is left empty with no array (capacity 0), so its destructor's delete[] is on
+    // nullptr, which does nothing. noexcept matters: std::vector<RingBuffer> only moves
+    // its elements when it grows if the move can't throw, otherwise it copies them.
+    RingBuffer(RingBuffer&& other) noexcept
+        : data_(other.data_),
+          capacity_(other.capacity_),
+          head_(other.head_),
+          tail_(other.tail_),
+          count_(other.count_) {
+        other.release();
+    }
+
+    // Move assignment: free our array, take other's, leave other empty.
+    RingBuffer& operator=(RingBuffer&& other) noexcept {
+        if (this != &other) {
+            delete[] data_;
+            data_ = other.data_;
+            capacity_ = other.capacity_;
+            head_ = other.head_;
+            tail_ = other.tail_;
+            count_ = other.count_;
+            other.release();
+        }
+        return *this;
+    }
+
     void swap(RingBuffer& other) noexcept {
         std::swap(data_, other.data_);
         std::swap(capacity_, other.capacity_);
@@ -69,6 +97,9 @@ public:
 
     // Adds to the back. If the buffer is full the oldest element gets overwritten.
     void push(const T& value) {
+        if (capacity_ == 0) {
+            throw std::logic_error("push() on a moved-from RingBuffer");
+        }
         data_[tail_] = value;
         tail_ = (tail_ + 1) % capacity_;
         if (full()) {
@@ -112,9 +143,15 @@ public:
     std::size_t capacity() const { return capacity_; }
     std::size_t size() const { return count_; }
     bool empty() const { return count_ == 0; }
-    bool full() const { return count_ == capacity_; }
+    bool full() const { return capacity_ > 0 && count_ == capacity_; }
 
 private:
+    // forget the array without freeing it (someone else owns it now)
+    void release() {
+        data_ = nullptr;
+        capacity_ = head_ = tail_ = count_ = 0;
+    }
+
     T* data_ = nullptr;
     std::size_t capacity_ = 0;
     std::size_t head_ = 0;

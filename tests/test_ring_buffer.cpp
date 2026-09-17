@@ -1,6 +1,8 @@
 #include <deque>
 #include <stdexcept>
 #include <string>
+#include <type_traits>
+#include <utility>
 
 #include "check.hpp"
 #include "ring_buffer.hpp"
@@ -166,6 +168,52 @@ void test_self_assignment() {
     CHECK(a[0] == 1 && a[1] == 2);
 }
 
+void test_move_constructor_steals_the_array() {
+    RingBuffer<int> a(3);
+    for (int i = 1; i <= 4; ++i) a.push(i);
+    const int* before = &a[0];
+    RingBuffer<int> b(std::move(a));
+    CHECK(&b[0] == before);  // same memory, nothing was copied
+    CHECK(b.size() == 3);
+    CHECK(b[0] == 2 && b[2] == 4);
+
+    // a is empty but still safe to use and destroy
+    CHECK(a.empty());
+    CHECK(!a.full());
+    CHECK(a.capacity() == 0);
+    CHECK_THROWS(a.pop(), std::out_of_range);
+    CHECK_THROWS(a.push(1), std::logic_error);
+}
+
+void test_move_assignment() {
+    RingBuffer<std::string> a(2);
+    a.push("p");
+    a.push("q");
+    RingBuffer<std::string> b(4);
+    b.push("gets freed");
+    b = std::move(a);
+    CHECK(b.capacity() == 2);
+    CHECK(b[0] == "p" && b[1] == "q");
+    CHECK(a.empty() && a.capacity() == 0);
+
+    // a moved-from buffer can be assigned a new value and used again
+    a = RingBuffer<std::string>(3);
+    a.push("back");
+    CHECK(a.front() == "back");
+}
+
+void test_copy_of_moved_from() {
+    RingBuffer<int> a(2);
+    RingBuffer<int> b(std::move(a));
+    RingBuffer<int> c(a);
+    CHECK(c.empty() && c.capacity() == 0);
+}
+
+void test_move_is_noexcept() {
+    static_assert(std::is_nothrow_move_constructible_v<RingBuffer<int>>);
+    static_assert(std::is_nothrow_move_assignable_v<RingBuffer<int>>);
+}
+
 int main() {
     RUN(test_new_buffer_is_empty);
     RUN(test_zero_capacity_throws);
@@ -181,6 +229,10 @@ int main() {
     RUN(test_copy_keeps_wrapping_right);
     RUN(test_copy_assignment);
     RUN(test_self_assignment);
+    RUN(test_move_constructor_steals_the_array);
+    RUN(test_move_assignment);
+    RUN(test_copy_of_moved_from);
+    RUN(test_move_is_noexcept);
 
     if (g_failures) {
         std::printf("\n%d check(s) failed\n", g_failures);
