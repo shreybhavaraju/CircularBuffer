@@ -214,6 +214,52 @@ void test_move_is_noexcept() {
     static_assert(std::is_nothrow_move_assignable_v<RingBuffer<int>>);
 }
 
+// Counts how many Tracked objects are alive. new T[n] constructs n of them and delete[]
+// destroys n, so after every buffer is gone the count has to be back at 0. If a delete[]
+// is missing (leak) it stays above 0; if an array gets freed twice it goes negative.
+struct Tracked {
+    static int alive;
+    static int constructed;
+    int v = 0;
+    Tracked() { ++alive; ++constructed; }
+    Tracked(int x) : v(x) { ++alive; ++constructed; }
+    Tracked(const Tracked& o) : v(o.v) { ++alive; ++constructed; }
+    Tracked& operator=(const Tracked&) = default;
+    ~Tracked() { --alive; }
+};
+int Tracked::alive = 0;
+int Tracked::constructed = 0;
+
+void test_every_element_destroyed_once() {
+    Tracked::alive = 0;
+    {
+        RingBuffer<Tracked> a(4);
+        CHECK(Tracked::alive == 4);  // new T[4] default constructs all 4 slots up front
+        for (int i = 0; i < 10; ++i) a.push(Tracked(i));
+        a.pop();
+        RingBuffer<Tracked> b(a);        // +4
+        RingBuffer<Tracked> c(2);        // +2
+        c = b;                           // c's old 2 freed, +4 for the copy
+        RingBuffer<Tracked> d(std::move(a));  // no new ones, d owns a's 4
+        RingBuffer<Tracked> e(3);        // +3
+        e = std::move(c);                // e's old 3 freed
+        CHECK(Tracked::alive == 12);     // b, d, e own 4 each
+    }
+    CHECK(Tracked::alive == 0);
+}
+
+void test_move_doesnt_construct_anything() {
+    RingBuffer<Tracked> a(1000);
+    Tracked::constructed = 0;
+    RingBuffer<Tracked> b(std::move(a));
+    RingBuffer<Tracked> c(1);
+    Tracked::constructed = 0;
+    c = std::move(b);
+    CHECK(Tracked::constructed == 0);
+    RingBuffer<Tracked> d(c);  // a copy on the other hand makes 1000 new ones
+    CHECK(Tracked::constructed == 1000);
+}
+
 int main() {
     RUN(test_new_buffer_is_empty);
     RUN(test_zero_capacity_throws);
@@ -233,6 +279,8 @@ int main() {
     RUN(test_move_assignment);
     RUN(test_copy_of_moved_from);
     RUN(test_move_is_noexcept);
+    RUN(test_every_element_destroyed_once);
+    RUN(test_move_doesnt_construct_anything);
 
     if (g_failures) {
         std::printf("\n%d check(s) failed\n", g_failures);
