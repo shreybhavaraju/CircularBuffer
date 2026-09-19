@@ -260,6 +260,18 @@ void test_move_doesnt_construct_anything() {
     CHECK(Tracked::constructed == 1000);
 }
 
+void test_push_and_pop_move() {
+    // a string this long lives on the heap, so a move hands over the same buffer
+    std::string s(100, 'x');
+    const char* mem = s.data();
+    RingBuffer<std::string> b(2);
+    b.push(std::move(s));
+    CHECK(b.front().data() == mem);
+    std::string out = b.pop();
+    CHECK(out.data() == mem);
+    CHECK(out == std::string(100, 'x'));
+}
+
 int main() {
     RUN(test_new_buffer_is_empty);
     RUN(test_zero_capacity_throws);
@@ -271,6 +283,7 @@ int main() {
     RUN(test_index_out_of_range_throws);
     RUN(test_clear);
     RUN(test_works_with_strings);
+    RUN(test_push_and_pop_move);
     RUN(test_copy_is_deep);
     RUN(test_copy_keeps_wrapping_right);
     RUN(test_copy_assignment);

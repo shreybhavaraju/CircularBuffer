@@ -96,25 +96,17 @@ public:
     }
 
     // Adds to the back. If the buffer is full the oldest element gets overwritten.
-    void push(const T& value) {
-        if (capacity_ == 0) {
-            throw std::logic_error("push() on a moved-from RingBuffer");
-        }
-        data_[tail_] = value;
-        tail_ = (tail_ + 1) % capacity_;
-        if (full()) {
-            head_ = (head_ + 1) % capacity_;  // the slot we just wrote was the oldest one
-        } else {
-            ++count_;
-        }
-    }
+    // The const T& version copies the value in, the T&& one moves it (e.g. push(std::move(s))
+    // or push(std::string("tmp")) takes the string's memory instead of copying it).
+    void push(const T& value) { write_at_tail(value); }
+    void push(T&& value) { write_at_tail(std::move(value)); }
 
     // Removes and returns the oldest element.
     T pop() {
         if (empty()) {
             throw std::out_of_range("pop() on an empty RingBuffer");
         }
-        T value = data_[head_];
+        T value = std::move(data_[head_]);  // the slot is dead after this, no need to copy
         head_ = (head_ + 1) % capacity_;
         --count_;
         return value;
@@ -146,6 +138,20 @@ public:
     bool full() const { return capacity_ > 0 && count_ == capacity_; }
 
 private:
+    template <typename U>
+    void write_at_tail(U&& value) {
+        if (capacity_ == 0) {
+            throw std::logic_error("push() on a moved-from RingBuffer");
+        }
+        data_[tail_] = std::forward<U>(value);
+        tail_ = (tail_ + 1) % capacity_;
+        if (full()) {
+            head_ = (head_ + 1) % capacity_;  // the slot we just wrote was the oldest one
+        } else {
+            ++count_;
+        }
+    }
+
     // forget the array without freeing it (someone else owns it now)
     void release() {
         data_ = nullptr;
