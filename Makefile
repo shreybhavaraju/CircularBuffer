@@ -14,6 +14,12 @@ test: build/tests
 sanitize: build/tests_asan
 	./build/tests_asan
 
+demo: build/demo
+	./build/demo
+
+build/demo: examples/demo.cpp include/ring_buffer.hpp | build
+	$(CXX) $(CXXFLAGS) $< -o $@
+
 build/tests: tests/test_ring_buffer.cpp $(HEADERS) | build
 	$(CXX) $(CXXFLAGS) $< -o $@
 
@@ -26,4 +32,4 @@ build:
 clean:
 	rm -rf build
 
-.PHONY: test sanitize clean
+.PHONY: test sanitize demo clean
